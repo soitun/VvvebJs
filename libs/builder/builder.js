@@ -873,11 +873,12 @@ Vvveb.WysiwygEditor = {
 Vvveb.Builder = {
 
 	component : {},
-	dragMoveMutation : false,
-	isPreview : false,
-	runJsOnSetHtml : false,
-	designerMode : false,
-	highlightEnabled : false,
+	iframe: null,
+	dragMoveMutation: false,
+	isPreview: false,
+	runJsOnSetHtml: false,
+	designerMode: false,
+	highlightEnabled: false,
 	selectPadding: 0,
 	leftPanelWidth: 275,
 	ignoreClasses: ["clearfix", "masonry", "has-shadow"],
@@ -895,8 +896,12 @@ Vvveb.Builder = {
 		self.highlightEl = null;
 		self.initCallback = callback;
 		
-        self.documentFrame = document.querySelector("#iframe-wrapper > iframe");
-        self.canvas = document.getElementById("canvas");
+		self.documentFrame = document.querySelector("#iframe-wrapper > iframe");
+		self.canvas = document.getElementById("canvas");
+		
+		if (!url) {
+			url = 'about:blank';
+		}
 
 		self._loadIframe(url + (url.indexOf('?') > -1 ? '&r=':'?r=') + Math.random());
 		
@@ -911,7 +916,7 @@ Vvveb.Builder = {
 		self.leftPanelWidth = document.getElementById("left-panel").clientWidth;
 	},
 	
-/* controls */    	
+	/* controls */    	
 	loadControlGroups : function() {	
 
 		let componentsList = document.querySelectorAll(".components-list");
@@ -1206,7 +1211,7 @@ Vvveb.Builder = {
 
 		self._initHighlight();
 		
-		window.dispatchEvent(new CustomEvent("vvveb.iframe.loaded", {detail: self.frameDoc}));
+		window.dispatchEvent(new CustomEvent("Vvveb.iframe.loaded", {detail: self.frameDoc}));
 
 		document.querySelector(".loading-message").classList.remove("active");
 		Vvveb.NewSection.init();
@@ -1424,7 +1429,7 @@ Vvveb.Builder = {
 		document.querySelector("#highlight-name .type").innerHTML = elementType[0];
 		document.querySelector("#highlight-name .name").innerHTML = elementType[1];
 		
-		window.dispatchEvent(new CustomEvent("vvveb.Builder.selectNode", {detail: {target}}));
+		window.dispatchEvent(new CustomEvent("Vvveb.Builder.selectNode", {detail: {target}}));
 	},
 
 /* iframe highlight */    
@@ -2188,7 +2193,7 @@ Vvveb.Builder = {
 		// like saving with sticky classes set for navbar etc
 		// this.iframe.contentWindow.scrollTo(0,0);
 		if (filter) {
-			window.dispatchEvent(new CustomEvent("vvveb.getHtml.before", {detail: doc}));
+			window.dispatchEvent(new CustomEvent("Vvveb.getHtml.before", {detail: doc}));
 		}
 
 		if (hasDoctpe) html =
@@ -2205,11 +2210,21 @@ Vvveb.Builder = {
 		html = this.removeHelpers(html, keepHelperAttributes);
 
 		if (filter) {
-			 window.dispatchEvent(new CustomEvent("vvveb.getHtml.after", {detail: doc}));
-			 window.dispatchEvent(new CustomEvent("vvveb.getHtml.filter", {detail: html}));
+			 window.dispatchEvent(new CustomEvent("Vvveb.getHtml.after", {detail: doc}));
+			 window.dispatchEvent(new CustomEvent("Vvveb.getHtml.filter", {detail: html}));
 		}
          
          return html;
+	},
+	
+	loadHtml: function(html) {
+		this.iframe.srcdoc = html;
+		/*
+		this.iframe.src = "about:blank";
+		window.FrameDocument.open();
+		window.FrameDocument.write(html);
+		window.FrameDocument.close();
+		*/
 	},
 	
 	setHtml: function(html) {
@@ -2276,96 +2291,83 @@ Vvveb.Builder = {
 		
 		let data = {type, name, html:element.outerHTML};
 		
-		fetch(saveReusableUrl, {method: "POST",  body: new URLSearchParams(data)})
-		.then((response) => {
-			if (!response.ok) { throw new Error(response) }
-			return response.text()
-		})
-		.then((data) => {
-			if (callback) callback(data);
-			let bg = "success";
-			if (true || data.success || text == "success") {		
-			} else {
-				bg = "danger";
-			}
-			
-			displayToast(bg, "Save", data.message ?? data);					
-		})
-		.catch(error => {
-			console.log(error.statusText);
-			displayToast("danger", "Error", "Error saving!");
-		});
-		/*
-		return $.ajax({
-			type: "POST",
-			url: saveReusableUrl,//set your server side save script url
-			data: data,
-			cache: false,
-		}).done(function (data, text) {
-			if (callback) callback(data);
-			let bg = "success";
-			if (data.success || text == "success") {		
-			} else {
-				bg = "danger";
-			}
-			
-			displayToast(bg, "Save", data.message ?? data);			
-		}).fail(function (data) {
-			displayToast("danger", "Error", "Error saving!");
-			alert(data.responseText);
-		});		
-		*/
+		if (typeof saveUrl != "undefined") {
+			fetch(saveReusableUrl, {method: "POST",  body: new URLSearchParams(data), credentials: 'include'})
+			.then((response) => {
+				if (!response.ok) { throw new Error(response) }
+				return response.text()
+			})
+			.then((data) => {
+				if (callback) callback(data);
+				let bg = "success";
+				if (true || data.success || text == "success") {		
+				} else {
+					bg = "danger";
+				}
+				
+				displayToast(bg, "Save", data.message ?? data);					
+			})
+			.catch(error => {
+				console.log(error.statusText);
+				displayToast("danger", "Error", "Error saving!");
+			});
+		}
 	},
 	
-	saveAjax: function(data, saveUrl, callback, error ) {
+	save: function(data, saveUrl, success, error, done ) {
 		if (!data["file"]) {
 			data["file"]  = Vvveb.FileManager.getCurrentFileName();
 		}
-		        
+
 		if (!data["startTemplateUrl"]) {
 			data["html"] = this.getHtml();
 		}
 
+		let detail = {...Vvveb.FileManager.getPageData(), ...data};
+		//allow event to change name or cancel by setting name to false
+		window.dispatchEvent(new CustomEvent("Vvveb.Builder.save", {
+			detail
+		}));
+
 		//data['elements'] = new URLSearchParams(data['elements']);
-
-		return fetch(saveUrl, {
-			method: "POST",  
-			headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
-			body:  nestedFormData(data)
-		})
-		.then((response) => {
-			if (!response.ok) {
-				return Promise.resolve(response.text()).then((responseInText) => {
-					return Promise.reject([response, responseInText]);
-				});
-			}
-			return response.text();
-		})
-		.then((data) => {
-			if (callback) callback(data);
-			Vvveb.Undo.reset();
-			document.querySelectorAll("#top-panel .save-btn").forEach(e => e.setAttribute("disabled", "true"));
-			window.dispatchEvent(new CustomEvent("vvveb.Builder.saveAjax", {
-				detail: data,
-			}));
-		})
-		.catch((err) => {
-			if (error) error(err);
-			
-			let message = err;
-			try {
+		if (saveUrl && data.name) {
+			return fetch(saveUrl, {
+				method: "POST",  
+				headers: {'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'},
+				body:  nestedFormData(data)
+			})
+			.then((response) => {
+				if (!response.ok) {
+					return Promise.resolve(response.text()).then((responseInText) => {
+						return Promise.reject([response, responseInText]);
+					});
+				}
+				return response.text();
+			})
+			.then((data) => {
+				if (success) success(data);
+				Vvveb.Undo.reset();
+				document.querySelectorAll("#top-panel .save-btn").forEach(e => e.setAttribute("disabled", "true"));
+			})
+			.catch((err) => {
+				if (error) error(err);
+				
 				let [response, responseInText] = err;
-				let message = responseInText ?? response.statusText ?? "Error uploading!";
-			} catch (e) {
-			}
+				let message = responseInText || response.statusText || "Error saving!";
 
-			if (err.hasOwnProperty('text')) err.text().then( errorMessage => {
-			  	let message = errorMessage.substr(0, 200);
-				displayToast("danger", "Error", message);
+				if (response.hasOwnProperty('text')) response.text().then( errorMessage => {
+					let message = errorMessage.substr(0, 200);
+					displayToast("danger", "Error", message);
+				});
+
+				if (message) {
+					displayToast("danger", "Error", message.substr(0, 200));
+				}
 			});
-
-			displayToast("danger", "Error", message.substr(0, 200));
-		});
+		} else {
+			if (done) done();
+			Vvveb.Undo.reset();
+		}
 	},
 	
 	setDesignerMode: function(designerMode = false) {
@@ -2393,7 +2395,7 @@ Vvveb.ModalCodeEditor = {
 		let self = this;
 
 		this.modal.querySelector('.save-btn').addEventListener("click",  function(event) {
-			window.dispatchEvent(new CustomEvent("vvveb.ModalCodeEditor.save", {detail: self.getValue()}));
+			window.dispatchEvent(new CustomEvent("Vvveb.ModalCodeEditor.save", {detail: self.getValue()}));
 			self.hide();
 			return false;
 		});
@@ -2567,7 +2569,7 @@ Vvveb.Gui = {
 						e.preventDefault();
 						let btn = document.querySelector('.save-btn');
 						let url = btn.dataset.vvvebUrl;
-						self.saveAjax(null, url, document.querySelector('.save-btn'));
+						self.save(null, url, document.querySelector('.save-btn'));
 						return;
 					case 'z':
 						e.preventDefault();
@@ -2625,52 +2627,61 @@ Vvveb.Gui = {
 	},
 	
 	//show modal with html content
-	save : function () {
+	saveModal: function () {
 		document.getElementById('textarea-modal textarea').value = Vvveb.Builder.getHtml();
 		document.getElementById('textarea-modal').modal();
 	},
     
 	//post html content through ajax to save to filesystem/db
-	saveAjax : function (event, saveUrl = null, saveBtn = null) {
+	save: function (event, saveUrl = null, saveBtn = null) {
 		let btn = saveBtn ?? this;
 		saveUrl = saveUrl ?? this.dataset.vvvebUrl;
-		let file = Vvveb.FileManager.getPageData('file');
+		let pageData = Vvveb.FileManager.getPageData();
 		//if offcanvas check if user provided new template name
 		if (btn.classList.contains("save-offcanvas")) {
 			if (document.querySelector("#save-offcanvas [name=template]:checked").value == "new") {
-				file = document.querySelector("#save-offcanvas [name=folder]").value + "/" + document.querySelector("#save-offcanvas [name=file]").value;
+				pageData['file'] = document.querySelector("#save-offcanvas [name=folder]").value + "/" + document.querySelector("#save-offcanvas [name=file]").value;
 			}
 		}
 
 		btn.querySelector(".loading").classList.remove("d-none");
 		btn.querySelector(".button-text").classList.add("d-none");
 	
-		return Vvveb.Builder.saveAjax({file}, saveUrl, (data) => {
-			//use toast to show save status
+		let detail = {...pageData, saveUrl, saveBtn};
+		const saveEvent = new CustomEvent("Vvveb.Gui.save", {detail});
+		window.dispatchEvent(saveEvent);
 
-			let bg = "success";
-			if (true || data.success || data == "success") {		
+			return Vvveb.Builder.save(pageData, saveUrl, (data) => {//success
+				//use toast to show save status
+
+				let bg = "success";
+				if (true || data.success || data == "success") {		
+					document.querySelectorAll("#top-panel .save-btn").forEach(e => e.setAttribute("disabled", "true"));
+				} else {
+					bg = "danger";
+				}
+				
+				displayToast(bg, "Save", data.message ?? data);
+
+				const offcanvas = document.getElementById('save-offcanvas');
+				if (offcanvas) {
+					let instance = bootstrap.Offcanvas.getInstance(offcanvas);
+					if (instance) instance.hide();			
+				}
+				
+				btn.querySelector(".loading").classList.add("d-none");
+				btn.querySelector(".button-text").classList.remove("d-none");
+			}, (error) => {//error
+				btn.querySelector(".loading").classList.add("d-none");
+				btn.querySelector(".button-text").classList.remove("d-none");
+				let message = error?.statusText ?? "Error saving!";
+				displayToast("danger", "Error", message);
+			}, () => {//done
+				btn.querySelector(".loading").classList.add("d-none");
+				btn.querySelector(".button-text").classList.remove("d-none");
 				document.querySelectorAll("#top-panel .save-btn").forEach(e => e.setAttribute("disabled", "true"));
-			} else {
-				bg = "danger";
-			}
-			
-			displayToast(bg, "Save", data.message ?? data);
-
-			const offcanvas = document.getElementById('save-offcanvas');
-			if (offcanvas) {
-				let instance = bootstrap.Offcanvas.getInstance(offcanvas);
-				if (instance) instance.hide();			
-			}
-			
-			btn.querySelector(".loading").classList.add("d-none");
-			btn.querySelector(".button-text").classList.remove("d-none");
-		}, (error) => {
-			btn.querySelector(".loading").classList.add("d-none");
-			btn.querySelector(".button-text").classList.remove("d-none");
-			let message = error?.statusText ?? "Error saving!";
-			displayToast("danger", "Error", message);
-		});		
+			});	
+		
 	},
 	
 	download : function () {
@@ -2777,7 +2788,7 @@ Vvveb.Gui = {
 	},
 
 	//Pages, file/components tree 
-	newPage : function () {
+	newPage: function () {
 		
 		let newPageModal = document.getElementById('new-page-modal');
 		let form = newPageModal.querySelector("form");
@@ -2788,23 +2799,26 @@ Vvveb.Gui = {
 		let submitForm = function(e) {
 
 			let data = {};
-			this.querySelectorAll("input[type=text],input[type=checkbox]:checked,input[type=radio]:checked,input[name=image], select:not(:disabled)").forEach( (el, i) => {
+			this.querySelectorAll("input[type=text],input[type=number],input[type=checkbox]:checked,input[type=radio]:checked,input[name=image],textarea,select:not(:disabled)").forEach( (el, i) => {
 				if (el.offsetParent || el.name == 'image') data[el.name] = el.value;
 			});			
 			
+			if (!data['file']) {
+				data['file'] = data['title'] + '.html';
+			}
+			
+			if (!data['name']) {
+				data['name'] = data['title'];
+			}
+
 			if (data['file']) {
-				data['title']  = data['file'].replace('/', '').replace('.html', '');
-				//let name = data['name'] = data['folder'].replace('/', '_') + "-" + data['title'];
-				if (!data['name']) {
-					data['name'] = data['title'];
-				}
 				data['url']  = data['file'] = data['folder'] + "/" + data['file'];
 				//data['url']  = Vvveb.themeBaseUrl + data['url'];
 			}
 
 			e.preventDefault();
-
-			return Vvveb.Builder.saveAjax(data, this.action, function (savedData) {
+			
+			return Vvveb.Builder.save(data, this.getAttribute("action"), function (savedData) {
 					data.title = data.name;
 
 					if (typeof savedData === 'object' && savedData !== null) {
@@ -2814,10 +2828,21 @@ Vvveb.Gui = {
 						data.title = savedData.title ?? data.title;
 					}
 					
+					delete data['startTemplateUrl'];
 					let page = Vvveb.FileManager.addPage(data.name, data);
 					Vvveb.FileManager.loadPage(data.name);
 					Vvveb.FileManager.scrollToPage(page);
 					bsModal.hide();
+			}, (error) => {//error
+				let message = error?.statusText ?? "Error saving!";
+				displayToast("danger", "Error", message);
+			}, () => {//done
+				delete data['startTemplateUrl'];
+				let page = Vvveb.FileManager.addPage(data.name, data);
+				Vvveb.FileManager.loadPage(data.name);
+				Vvveb.FileManager.scrollToPage(page);
+				bsModal.hide();
+				document.querySelectorAll("#top-panel .save-btn").forEach(e => e.setAttribute("disabled", "true"));
 			});
 		};
 		
@@ -2870,7 +2895,7 @@ Vvveb.Gui = {
 			panel.style.display = "none";
 			visible = false;
 		} else {
-			prevValue= panel.dataset.layoutToggle;
+			prevValue = panel.dataset.layoutToggle;
 			body.style.setProperty(cssVar, "");
 			panel.style.display = "";
 			visible = true;
@@ -2887,11 +2912,28 @@ Vvveb.Gui = {
 		Vvveb.Gui.togglePanel("#left-panel", "--builder-left-panel-width");
 	},	
 	
-	toggleRightColumn: function (rightColumnEnabled = null) {
-		rightColumnEnabled = Vvveb.Gui.togglePanel("#right-panel", "--builder-right-panel-width");
-
-		document.getElementById("vvveb-builder").classList.toggle("no-right-panel");
-		document.querySelector(".component-properties-tab").classList.toggle("d-none");
+	toggleRightColumn: function (e, rightColumnEnabled = null) {
+		if (rightColumnEnabled === null) {
+			rightColumnEnabled = Vvveb.Gui.togglePanel("#right-panel", "--builder-right-panel-width");
+		} else {
+			let panel = document.getElementById("right-panel");
+			let body = document.querySelector("body");
+			if (rightColumnEnabled) {
+				panel.style.display = "none";
+				body.style.setProperty("--builder-right-panel-width", "0px");
+			} else {
+				panel.style.display = "";
+				body.style.setProperty("--builder-right-panel-width", "");
+			}
+		}
+		
+		if (rightColumnEnabled) {
+			document.getElementById("vvveb-builder").classList.remove("no-right-panel");
+			document.querySelector(".component-properties-tab").classList.add("d-none");
+		} else {
+			document.getElementById("vvveb-builder").classList.add("no-right-panel");
+			document.querySelector(".component-properties-tab").classList.remove("d-none");
+		}
 		
 		Vvveb.Components.componentPropertiesElement = (rightColumnEnabled ? "#right-panel" :"#left-panel #properties") + " .component-properties";
 		let componentTab = document.querySelector("#components-tab");
@@ -2912,6 +2954,11 @@ Vvveb.Gui = {
 		}
 	},
 
+	toggleSidebar: function () {
+		let container = document.getElementById("container");
+		container.classList.toggle("small-nav");
+	},
+	
 	treeListRight: function () {
 		let treeList = document.getElementById("tree-list");
 		let btnIcon = document.querySelector("[data-vvveb-action='treeListRight'] i");
@@ -2923,7 +2970,7 @@ Vvveb.Gui = {
 			treeList.style.width = "";
 			btnIcon.className = "icon-stop-outline";
 		} else {
-			treeList.style.height = "100%";
+			treeList.style.height = "auto";
 			treeList.style.right = "0";
 			treeList.style.top = "0";
 			treeList.style.left = "auto";
@@ -2983,7 +3030,7 @@ Vvveb.Gui = {
 	setState: function () {
 		Vvveb.StyleManager.setState(this.value);
 		Vvveb.Builder.reloadComponent();
-	}	
+	}
 }
 
 Vvveb.StyleManager = {
@@ -3165,7 +3212,7 @@ Vvveb.StyleManager = {
 		
 		this.generateCss(media);
 
-		window.dispatchEvent(new CustomEvent("vvveb.StyleManager.setStyle", {detail: {element, styleProp, value}}));
+		window.dispatchEvent(new CustomEvent("Vvveb.StyleManager.setStyle", {detail: {element, styleProp, value}}));
 		
 		return element;		
         	//uncomment bellow code to set css in element's style attribute 
@@ -3828,9 +3875,9 @@ Vvveb.TreeList = {
 		});
 
 		document.querySelector(this.selector).addEventListener("click", function (e) {
-			let element = e.target.closest("li[data-component]");
+			let element = e.target.closest("li[data-component] label");
 			if (element) {
-				const node = element._treeNode;
+				const node = element.parentNode._treeNode;
 				node.scrollIntoView({behavior: "smooth", block: "center", inline: "center"});
 				//node.click();
 				Vvveb.Builder.selectNode(node);
@@ -4009,13 +4056,14 @@ Vvveb.FileManager = {
 		let page = element.dataset;
 		if (confirm(`Are you sure you want to delete "${page.file}"template?`)) {
 
-			let detail = {page, element};
+			let detail = this.pages[page.page];
+			detail['element'] = element;
 			//allow event to change page or cancel by setting page to false
-			window.dispatchEvent(new CustomEvent("vvveb.FileManager.deletePage", {
+			window.dispatchEvent(new CustomEvent("Vvveb.FileManager.deletePage", {
 				detail
 			}));
 
-			if (detail.page) {
+			if (typeof deleteUrl != "undefined" && detail.page) {
 				
 				fetch(deleteUrl, {method: "POST",  body: new URLSearchParams({file:page.file})})
 				.then((response) => {
@@ -4042,7 +4090,9 @@ Vvveb.FileManager = {
 						displayToast("danger", "Error", message);
 					})					
 				});
-
+			}
+			
+			if (element) {
 				element.remove();
 			}
 		}
@@ -4056,11 +4106,11 @@ Vvveb.FileManager = {
 
 			let detail = {page, newfile, element};
 			//allow event to change page or newfile or cancel by setting page to false
-			window.dispatchEvent(new CustomEvent("vvveb.FileManager.renamePage", {
+			window.dispatchEvent(new CustomEvent("Vvveb.FileManager.renamePage", {
 				detail
 			}));
 
-			if (detail.page) {
+			if (typeof renameUrl != "undefined" && detail.page) {
 
 				fetch(renameUrl, {method: "POST",  body: new URLSearchParams({file:page.file, newfile:newfile, duplicate})})
 				.then((response) => {
@@ -4106,15 +4156,19 @@ Vvveb.FileManager = {
 						displayToast("danger", "Error", message);
 					})
 				});				
+			} else {
+				if (detail.page) {
+					
+				}
 			}
 		}
 	},
 	
 	addPage: function(name, data, afterPage = false, append = true) {
-
+		let detail = {name, data};
 		//allow event to change name or cancel by setting name to false
-		window.dispatchEvent(new CustomEvent("vvveb.FileManager.addPage", {
-			detail: [name, data],
+		window.dispatchEvent(new CustomEvent("Vvveb.FileManager.addPage", {
+			detail
 		}));
 
 		if (!name) {
@@ -4150,7 +4204,7 @@ Vvveb.FileManager = {
 	},
 	
 	addPages: function(pages) {
-		for (page in pages) {
+		for (const page in pages) {
 			this.addPage(pages[page]['name'], pages[page]);
 		}
 	},
@@ -4206,10 +4260,6 @@ Vvveb.FileManager = {
 	loadPage: function(name, allowedComponents = false, disableCache = true, loadComponents = false) {
 		let url = this.pages[name]['url'] ?? "";
 		
-		if (!url) {
-			return;
-		}
-		
 		let page = this.tree.querySelector("[data-page='" + name + "']");
 		//remove active from current active page
 		this.tree.querySelector("[data-page].active")?.classList.remove("active");
@@ -4224,7 +4274,7 @@ Vvveb.FileManager = {
 		//allow event to change page or url or cancel by setting url to false
 		let self = this;
 
-		window.dispatchEvent(new CustomEvent("vvveb.FileManager.loadPage", {
+		window.dispatchEvent(new CustomEvent("Vvveb.FileManager.loadPage", {
 			detail: self.pages[name],
 		}));
 
@@ -4548,7 +4598,9 @@ Vvveb.NewSection = {
 	},	
 	
 	insert: function() {
+		if (Vvveb.Builder.frameDoc.getElementById("vvvebjs-new-section")) return;
 		let position = 'before';
+		
 		let lastSection = Vvveb.Builder.frameBody.querySelector(':scope > footer:last-of-type');
 		if (!lastSection) {
 			position = 'after';
