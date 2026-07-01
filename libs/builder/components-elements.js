@@ -1119,7 +1119,7 @@ Vvveb.Components.add("elements/social-icons", {
 			inline:false,
 			inputtype: ListInput,
 			data: {
-				selector:"> li",
+				selector:"li",
 				container:"",
 				prefix:"Item ",
 				name: "text",
@@ -1207,7 +1207,10 @@ function carouselAfterDrop(node) {
 				};
 				for (i in el.dataset) {
 					let param = el.dataset[i];
-					if (param[0] = '{') {
+					if (param == 'true') param = true;
+					if (param == 'false') param = false;
+					
+					if (param[0] == '{') {
 						param = JSON.parse(param);
 					}
 					params[i] = param;
@@ -1220,7 +1223,7 @@ function carouselAfterDrop(node) {
 		if (document.readyState !== 'loading') {
 			initSwiper();
 		  } else {
-			document.addEventListener('DOMContentLoaded', initSwiper);
+			document.addEventListener('DOMContentLoaded', e => initSwiper());
 		  }`;			
 		
 		body.appendChild(link);
